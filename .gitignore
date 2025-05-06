@@ -1,0 +1,11 @@
+.env
+.idea
+commit_diffs
+old
+path
+*.json
+AI_CHANGELOG.md
+*.log
+.DS_Store
+__pycache__
+AI_CHANGELOG.xhtml
