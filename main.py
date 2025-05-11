@@ -5,6 +5,7 @@ from typing import List, Dict, Optional
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 
+from confluence_uploader.upload_utils import convert_markdown_to_html, create_confluence_page
 from github_extractor.card_commit_scanner import CardCommitScanner
 from github_extractor.github_client import GitHubClient
 from github_extractor.save_utils import save_diffs_to_files
@@ -14,14 +15,15 @@ from summarize_ai.change_log_generator import ChangeLogGenerator
 from summarize_ai.commit import Commit
 from summarize_ai.epic import Epic
 from logger import get_logger
+from datetime import datetime
 
 # Initialize logger
 logger = get_logger(__name__)
-
+load_dotenv()
 JIRA_DATA_FILE = "jira.json"
 COMMIT_DIFFS_DIR = "./commit_diffs"
-CHANGELOG_OUTPUT_FILE = "AI_CHANGELOG.md"
-DEFAULT_GOOGLE_API_KEY = "AIzaSyACKIWQDvtBoxsXRn1WtnPcBWXH2iEiXWM"
+CHANGELOG_OUTPUT_FILE = os.environ.get("CHANGELOG_OUTPUT_FILE")
+DEFAULT_GOOGLE_API_KEY = os.environ.get("DEFAULT_GOOGLE_API_KEY")
 
 def fetch_jira_cards_for_epic() -> Optional[Dict]:
     """Fetches Jira epic and linked card data and returns it."""
@@ -136,7 +138,6 @@ def ingest_jira_and_github_data(epic_data: Dict) -> Epic:
 def main():
     """Main function to orchestrate data fetching and changelog generation."""
     logger.info("Starting autodoc changelog generation process")
-
     logger.debug("Loading environment variables from .env file")
     load_dotenv()
 
@@ -176,6 +177,10 @@ def main():
     generator.generate(full_epic, CHANGELOG_OUTPUT_FILE)
 
     logger.info("Changelog generation completed successfully")
+    logger.info("Uploading to Confluence page...")
+    html = convert_markdown_to_html(CHANGELOG_OUTPUT_FILE)
+    page_url = create_confluence_page(f"{os.environ.get('EPIC_KEY')}-Summary-{datetime.now()}", html)
+    logger.info(f"✅ Confluence page created: {page_url}")
 
 
 if __name__ == "__main__":

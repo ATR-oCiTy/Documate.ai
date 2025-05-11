@@ -30,7 +30,7 @@ class Epic:
             card_summaries.append(card_summary)
 
         logger.debug("Joining card summaries")
-        joined = "\n\n".join([
+        joined = "\n\n\n".join([
             f"### {card.id} - {card.title}\n{summary}"
             for card, summary in zip(self.cards, card_summaries)
         ])
@@ -47,9 +47,8 @@ class Epic:
             epic_summary = llm([HumanMessage(content=prompt)]).content
             logger.debug(f"Generated epic summary of length: {len(epic_summary)} characters")
 
-            final_summary = f"# Epic: {self.title}\n\n{epic_summary}\n\n---\n\n{joined}"
             logger.info("Epic summarization completed successfully")
-            return final_summary
+            return epic_summary
         except Exception as e:
             logger.error(f"Error generating epic summary: {e}")
             raise
