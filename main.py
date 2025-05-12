@@ -16,6 +16,8 @@ from summarize_ai.commit import Commit
 from summarize_ai.epic import Epic
 from logger import get_logger
 from datetime import datetime
+from jira_extractor.comment_utils import add_comment
+from flask import Flask, request
 
 # Initialize logger
 logger = get_logger(__name__)
@@ -181,7 +183,23 @@ def main():
     html = convert_markdown_to_html(CHANGELOG_OUTPUT_FILE)
     page_url = create_confluence_page(f"{os.environ.get('EPIC_KEY')}-Summary-{datetime.now()}", html)
     logger.info(f"✅ Confluence page created: {page_url}")
+    add_comment(page_url)
+    logger.info(f"✅ Linked to jira ticket: {os.environ.get('EPIC_KEY')}")
+    return f"✅ Confluence page created: {page_url}"
 
+# if __name__ == "__main__":
+#     main()
 
-if __name__ == "__main__":
-    main()
+app = Flask(__name__)
+
+@app.route("/", methods=["GET"])
+def run_job():
+    epic = request.args.get('epic', None)
+    if epic is None:
+        return "Please provide an epic number."
+    os.environ["EPIC_KEY"] = epic
+    print(f"EPIC_KEY: {os.environ.get('EPIC_KEY')}")
+    return main()
+
+if __name__ == '__main__':
+    app.run(debug=False)
