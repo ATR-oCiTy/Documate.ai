@@ -2,9 +2,9 @@ from typing import List
 from langchain.chat_models import ChatOpenAI
 from langchain.schema import HumanMessage
 
-from summarize_ai.commit import Commit
+from summarize_ai import Commit # Updated import
 from summarize_ai.prompts import CARD_SUMMARY_TEMPLATE
-from logger import get_logger
+from common import get_logger # Updated import
 
 # Initialize logger
 logger = get_logger(__name__)

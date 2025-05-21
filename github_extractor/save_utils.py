@@ -3,7 +3,7 @@ import os
 from itertools import groupby
 from pathlib import Path
 
-from logger import get_logger
+from common import get_logger # Updated import
 
 # Initialize logger
 logger = get_logger(__name__)

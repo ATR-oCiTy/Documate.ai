@@ -1,7 +1,7 @@
 from typing import List, Dict, Optional
 from jira import JIRA
 
-from logger import get_logger
+from common import get_logger # Updated import
 
 # Initialize logger
 logger = get_logger(__name__)

@@ -2,149 +2,41 @@ import json
 import os
 from typing import List, Dict, Optional
 
-from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-from confluence_uploader.upload_utils import convert_markdown_to_html, create_confluence_page
-from github_extractor.card_commit_scanner import CardCommitScanner
-from github_extractor.github_client import GitHubClient
-from github_extractor.save_utils import save_diffs_to_files
-from jira_extractor.jira_client import JiraClient
-from summarize_ai.card import Card
-from summarize_ai.change_log_generator import ChangeLogGenerator
-from summarize_ai.commit import Commit
-from summarize_ai.epic import Epic
-from logger import get_logger
+# Updated imports to use __init__.py exposures
+from confluence_uploader import convert_markdown_to_html, create_confluence_page
+# CardCommitScanner is used by DataCoordinator, not directly in main.py
+# from github_extractor import CardCommitScanner 
+from github_extractor import GitHubClient 
+from jira_extractor import JiraClient
+from summarize_ai import ChangeLogGenerator
 from datetime import datetime
-from jira_extractor.comment_utils import add_comment
+from jira_extractor import add_comment # Updated import
 from flask import Flask, request
+import config.settings as settings
+from common import get_logger # Updated import
+from services import DataCoordinator # Updated import
 
 # Initialize logger
 logger = get_logger(__name__)
-load_dotenv()
-JIRA_DATA_FILE = "jira.json"
-COMMIT_DIFFS_DIR = "./commit_diffs"
-CHANGELOG_OUTPUT_FILE = os.environ.get("CHANGELOG_OUTPUT_FILE")
-DEFAULT_GOOGLE_API_KEY = os.environ.get("DEFAULT_GOOGLE_API_KEY")
 
-def fetch_jira_cards_for_epic() -> Optional[Dict]:
-    """Fetches Jira epic and linked card data and returns it."""
-    logger.info("Fetching Jira cards for epic")
-    jira_server = os.getenv("JIRA_SERVER")
-    jira_username = os.getenv("JIRA_USERNAME")
-    jira_password = os.getenv("JIRA_PASSWORD")
-    epic_key = os.getenv("EPIC_KEY")
-
-    if not all([jira_server, jira_username, jira_password, epic_key]):
-        logger.error("Missing required environment variables for Jira connection")
-        return None
-
-    logger.debug(f"Connecting to Jira server: {jira_server} with user: {jira_username}")
-    jira_client = JiraClient(jira_server, jira_username, jira_password)
-
-    logger.info(f"Retrieving epic data for key: {epic_key}")
-    epic_data = jira_client.get_epic_data(epic_key)
-    if not epic_data:
-        logger.error(f"Failed to retrieve epic data for key: {epic_key}")
-        return None
-
-    final_data = epic_data
-    final_data["cards"] = []
-
-    logger.info(f"Retrieving issues linked to epic: {epic_key}")
-    linked_issue_keys = jira_client.get_issues_linked_to_epic(epic_key)
-    if linked_issue_keys:
-        logger.info(f"Found {len(linked_issue_keys)} issues linked to epic")
-        for card_key in linked_issue_keys:
-            logger.debug(f"Retrieving card data for: {card_key}")
-            card_data = jira_client.get_card_data(card_key)
-            if card_data:
-                logger.debug(f"Successfully retrieved data for card: {card_key}")
-                final_data["cards"].append(card_data)
-            else:
-                logger.warning(f"Failed to retrieve data for card: {card_key}")
-
-    # Optionally save to a file, but not strictly necessary for the data flow
-    # try:
-    #     with open(JIRA_DATA_FILE, 'w') as f:
-    #         json.dump(final_data, f, indent=4)
-    #     logger.info(f"Data successfully written to {JIRA_DATA_FILE}")
-    # except Exception as e:
-    #     logger.error(f"Error writing to JSON file: {e}")
-
-    logger.info(f"Successfully fetched data for epic: {epic_key} with {len(final_data.get('cards', []))} cards")
-    return final_data
-
-
-def fetch_commit_diffs_for_cards(card_keys: List[str]):
-    """Fetches commit diffs for a list of card keys from GitHub."""
-    logger.info(f"Fetching commit diffs for {len(card_keys)} cards")
-    token = os.getenv("GITHUB_TOKEN")
-    if not token:
-        logger.error("GITHUB_TOKEN not found in environment")
-        raise Exception("GITHUB_TOKEN not found in environment.")
-
-    org_name = os.getenv("GITHUB_ORG_NAME")
-    prefix = os.getenv("GITHUB_REPO_PREFIX")
-    logger.debug(f"Using GitHub organization: {org_name} and repo prefix: {prefix}")
-
-    for card_key in card_keys:
-        logger.info(f"Processing card: {card_key}")
-        github_client = GitHubClient(token, org_name)
-        scanner = CardCommitScanner(github_client, card_key)
-
-        logger.debug(f"Scanning for commits related to card: {card_key}")
-        results = scanner.scan(prefix)
-
-        logger.info(f"Saving commit diffs for card: {card_key}")
-        save_diffs_to_files(results, card_key, COMMIT_DIFFS_DIR)
-
-def ingest_jira_and_github_data(epic_data: Dict) -> Epic:
-    """Ingests Jira and GitHub data to create an Epic object."""
-    logger.info("Ingesting Jira and GitHub data to create Epic object")
-    card_list = []
-
-    cards = epic_data.get("cards", [])
-    logger.info(f"Processing {len(cards)} cards from epic data")
-
-    for card in cards:
-        logger.debug(f"Processing card: {card['id']}")
-        commit_list = []
-        try:
-            commit_file = f"{COMMIT_DIFFS_DIR}/{card['id']}.json"
-            logger.debug(f"Reading commit diffs from file: {commit_file}")
-            with open(commit_file, "r") as f:
-                commit_json = json.load(f)
-                logger.debug(f"Found commit data in {len(commit_json)} repositories")
-        except FileNotFoundError:
-            logger.warning(f"Commit diffs file not found for card {card['id']}. Skipping.")
-            continue
-        except Exception as e:
-            logger.error(f"Error reading commit diffs for card {card['id']}: {e}")
-            continue
-
-        total_commits = 0
-        for repo in commit_json.keys():
-            repo_commits = len(commit_json[repo])
-            total_commits += repo_commits
-            logger.debug(f"Processing {repo_commits} commits from repository: {repo}")
-            for commit in commit_json[repo]:
-                commit_list.append(Commit(commit["repo"], commit["sha"], commit["diff"]))
-
-        logger.info(f"Added {total_commits} commits for card: {card['id']}")
-        card_list.append(Card(card['id'], card['title'], card['description'], commit_list))
-
-    logger.info(f"Created Epic object with {len(card_list)} cards")
-    return Epic(epic_data['id'], epic_data['title'], epic_data['description'], card_list)
-
-def main():
+def main(epic_key: str): # Added epic_key parameter
     """Main function to orchestrate data fetching and changelog generation."""
-    logger.info("Starting autodoc changelog generation process")
-    logger.debug("Loading environment variables from .env file")
-    load_dotenv()
+    logger.info(f"Starting autodoc changelog generation process for EPIC_KEY: {epic_key}")
 
-    logger.info("Fetching Jira epic data")
-    epic_data = fetch_jira_cards_for_epic()
+    # Initialize clients
+    # JiraClient and GitHubClient will use settings for their respective configurations
+    # These settings are loaded once from .env and are not request-specific for these clients
+    jira_client = JiraClient(settings.JIRA_SERVER, settings.JIRA_USERNAME, settings.JIRA_PASSWORD)
+    github_client = GitHubClient(settings.GITHUB_TOKEN, settings.GITHUB_ORG_NAME)
+
+    # Instantiate DataCoordinator
+    coordinator = DataCoordinator(jira_client, github_client)
+
+    logger.info(f"Fetching Jira epic data for EPIC_KEY: {epic_key}")
+    # Pass the explicit epic_key to the coordinator
+    epic_data = coordinator.fetch_jira_cards_for_epic(epic_key=epic_key)
 
     if not epic_data:
         logger.error("Failed to fetch Jira data, exiting")
@@ -154,52 +46,69 @@ def main():
     logger.info(f"Extracted {len(card_keys)} card keys from epic data")
 
     logger.info("Fetching commit diffs from GitHub")
-    fetch_commit_diffs_for_cards(card_keys)
+    coordinator.fetch_commit_diffs_for_cards(card_keys)
 
     logger.info("Ingesting Jira and GitHub data")
-    full_epic = ingest_jira_and_github_data(epic_data)
+    full_epic = coordinator.ingest_jira_and_github_data(epic_data)
 
-    if "GOOGLE_API_KEY" not in os.environ:
-        logger.debug("GOOGLE_API_KEY not found in environment, using default key")
-        os.environ["GOOGLE_API_KEY"] = DEFAULT_GOOGLE_API_KEY
-    else:
-        logger.debug("Using GOOGLE_API_KEY from environment")
-
+    # GOOGLE_API_KEY is already handled in settings.py with a fallback mechanism
     logger.info("Initializing LLM for changelog generation")
     llm = ChatGoogleGenerativeAI(
         model="gemini-2.0-flash",
+        api_key=settings.GOOGLE_API_KEY, # Use the key from settings
         temperature=0,
         max_tokens=None,
         timeout=None,
         max_retries=2,
     )
 
-    logger.info(f"Generating changelog and saving to {CHANGELOG_OUTPUT_FILE}")
+    logger.info(f"Generating changelog and saving to {settings.CHANGELOG_OUTPUT_FILE}")
     generator = ChangeLogGenerator(llm)
-    generator.generate(full_epic, CHANGELOG_OUTPUT_FILE)
+    generator.generate(full_epic, settings.CHANGELOG_OUTPUT_FILE)
 
     logger.info("Changelog generation completed successfully")
     logger.info("Uploading to Confluence page...")
-    html = convert_markdown_to_html(CHANGELOG_OUTPUT_FILE)
-    page_url = create_confluence_page(f"{os.environ.get('EPIC_KEY')}-Summary-{datetime.now()}", html)
+    html = convert_markdown_to_html(settings.CHANGELOG_OUTPUT_FILE)
+    # Use the explicit epic_key for the page title
+    page_title = f"{epic_key}-Summary-{datetime.now()}"
+    page_url = create_confluence_page(page_title, html)
     logger.info(f"✅ Confluence page created: {page_url}")
-    add_comment(page_url)
-    logger.info(f"✅ Linked to jira ticket: {os.environ.get('EPIC_KEY')}")
+    # Pass the explicit epic_key to add_comment
+    add_comment(page_url, epic_key=epic_key)
+    logger.info(f"✅ Linked to jira ticket: {epic_key}")
     return f"✅ Confluence page created: {page_url}"
 
 # if __name__ == "__main__":
-#     main()
+#     # This block is for potential direct script execution, not used by Flask.
+#     # Ensure settings.EPIC_KEY is loaded from .env if you plan to use this.
+#     default_epic_key_from_env = settings.EPIC_KEY
+#     if default_epic_key_from_env:
+#         logger.info(f"Running directly with EPIC_KEY from .env: {default_epic_key_from_env}")
+#         main(epic_key=default_epic_key_from_env)
+#     else:
+#         logger.error("Attempted to run directly, but EPIC_KEY is not set in .env or config.settings.")
+#     # Note: The Flask app below is the primary entry point.
 
 app = Flask(__name__)
 
 @app.route("/", methods=["GET"])
 def run_job():
-    epic = request.args.get('epic', None)
-    if epic is None:
-        return "Please provide an epic number."
-    os.environ["EPIC_KEY"] = epic
-    print(f"EPIC_KEY: {os.environ.get('EPIC_KEY')}")
-    return main()
+    epic_key_param = request.args.get('epic', None)
+    if epic_key_param is None:
+        # Check if a default EPIC_KEY is available in settings as a fallback
+        if settings.EPIC_KEY:
+            logger.info(f"No 'epic' parameter provided, using default EPIC_KEY from settings: {settings.EPIC_KEY}")
+            epic_key_param = settings.EPIC_KEY
+        else:
+            logger.error("Missing 'epic' parameter in request and no default EPIC_KEY in settings.")
+            return "Please provide an epic number in the 'epic' query parameter.", 400
+    
+    logger.info(f"Processing request for EPIC_KEY: {epic_key_param}")
+    # Call main with the explicitly passed epic_key_param
+    return main(epic_key=epic_key_param)
 
 if __name__ == '__main__':
-    app.run(debug=False)
+    # For local development, it's good practice to ensure the Flask app runs
+    # with debug=True and on a specific port if needed.
+    # The default EPIC_KEY from .env will be used if no 'epic' param is given to '/'
+    app.run(debug=True, host='0.0.0.0', port=int(os.environ.get("PORT", 8080)))

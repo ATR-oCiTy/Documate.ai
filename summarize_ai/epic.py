@@ -2,9 +2,9 @@ from typing import List
 
 from langchain_core.messages import HumanMessage
 
-from summarize_ai.card import Card
+from summarize_ai import Card # Updated import
 from summarize_ai.prompts import EPIC_SUMMARY_TEMPLATE
-from logger import get_logger
+from common import get_logger # Updated import
 
 # Initialize logger
 logger = get_logger(__name__)

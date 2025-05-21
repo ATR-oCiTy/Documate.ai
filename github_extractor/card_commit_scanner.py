@@ -1,7 +1,7 @@
 from .github_client import GitHubClient
 from typing import List, Dict
 
-from logger import get_logger
+from common.logging import get_logger
 
 # Initialize logger
 logger = get_logger(__name__)
