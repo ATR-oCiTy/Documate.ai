@@ -87,28 +87,29 @@ def main(epic_key: str): # Added epic_key parameter
 #         main(epic_key=default_epic_key_from_env)
 #     else:
 #         logger.error("Attempted to run directly, but EPIC_KEY is not set in .env or config.settings.")
-#     # Note: The Flask app below is the primary entry point.
+    # Note: The Flask app functionality is now handled by app.py.
+    # The if __name__ == "__main__": block below can be used for direct script execution if needed.
 
-app = Flask(__name__)
-
-@app.route("/", methods=["GET"])
-def run_job():
-    epic_key_param = request.args.get('epic', None)
-    if epic_key_param is None:
-        # Check if a default EPIC_KEY is available in settings as a fallback
-        if settings.EPIC_KEY:
-            logger.info(f"No 'epic' parameter provided, using default EPIC_KEY from settings: {settings.EPIC_KEY}")
-            epic_key_param = settings.EPIC_KEY
-        else:
-            logger.error("Missing 'epic' parameter in request and no default EPIC_KEY in settings.")
-            return "Please provide an epic number in the 'epic' query parameter.", 400
-    
-    logger.info(f"Processing request for EPIC_KEY: {epic_key_param}")
-    # Call main with the explicitly passed epic_key_param
-    return main(epic_key=epic_key_param)
-
-if __name__ == '__main__':
-    # For local development, it's good practice to ensure the Flask app runs
-    # with debug=True and on a specific port if needed.
-    # The default EPIC_KEY from .env will be used if no 'epic' param is given to '/'
-    app.run(debug=True, host='0.0.0.0', port=int(os.environ.get("PORT", 8080)))
+if __name__ == "__main__":
+    # This block is for potential direct script execution.
+    # Example: python main.py YOUR_EPIC_KEY
+    # You might want to use argparse for more robust CLI argument handling.
+    import sys
+    if len(sys.argv) > 1:
+        epic_key_arg = sys.argv[1]
+        logger.info(f"Running directly with EPIC_KEY from command line: {epic_key_arg}")
+        try:
+            result_url = main(epic_key=epic_key_arg)
+            logger.info(f"Direct execution finished. Result: {result_url}")
+        except Exception as e:
+            logger.error(f"Error during direct execution: {e}", exc_info=True)
+    elif settings.EPIC_KEY:
+        logger.info(f"Running directly with EPIC_KEY from .env: {settings.EPIC_KEY}")
+        try:
+            result_url = main(epic_key=settings.EPIC_KEY)
+            logger.info(f"Direct execution finished. Result: {result_url}")
+        except Exception as e:
+            logger.error(f"Error during direct execution: {e}", exc_info=True)
+    else:
+        logger.warning("Attempted to run directly, but no EPIC_KEY provided via command line or .env.")
+        logger.warning("Usage for direct execution: python main.py <YOUR_EPIC_KEY>")

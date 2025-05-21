@@ -71,5 +71,6 @@ urllib3==2.4.0
 wheel
 yarl==1.20.0
 zstandard==0.23.0
-flask
+Flask>=2.0
+Flask-CORS>=3.0
 gunicorn
