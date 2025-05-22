@@ -3,7 +3,8 @@
 commit_diffs
 old
 path
-*.json
+# Removed *.json as it was too broad and ignored frontend/package.json
+# Specific json files to ignore can be added here if needed, e.g., /reports/*.json
 AI_CHANGELOG.md
 *.log
 .DS_Store
